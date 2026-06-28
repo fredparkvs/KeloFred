@@ -7,6 +7,7 @@ Endpoints
 ---------
 GET  /api/devices                      list bound devices (+ online state)
 GET  /api/devices/{did}                latest datapoint values
+GET  /api/devices/{did}/discover       datapoint schema + state (find channels)
 POST /api/devices/{did}/control        body: {"attrs": {...}}  raw write
 POST /api/devices/{did}/power          body: {"on": true}
 POST /api/devices/{did}/scene          body: {"scene": "...", "params": {...}}
@@ -71,7 +72,8 @@ async def lifespan(app: FastAPI):
                 "(KELORAY_USERNAME/KELORAY_PASSWORD). Check the username and "
                 f"password are correct: {e}"
             ) from e
-    state.runner = SceneRunner(state.client, min_interval=cfg.min_interval)
+    state.runner = SceneRunner(state.client, min_interval=cfg.min_interval,
+                               channel_map=cfg.channel_map())
     state.autos = Automations(state.runner)
     state.autos.load(cfg.rules)
     state.autos.start()
@@ -128,6 +130,22 @@ async def device_state(did: str):
     try:
         return {"did": did, "attrs": await state.client.latest(did),
                 "scene_running": state.runner.running(did)}
+    except GizwitsError as e:
+        raise _wrap(e)
+
+
+@app.get("/api/devices/{did}/discover")
+async def discover(did: str):
+    """Datapoint schema + current values — to learn a fixture's real channels."""
+    try:
+        dev = next((d for d in await state.client.bindings() if d.did == did), None)
+        if not dev:
+            raise HTTPException(404, f"device {did} not found in bindings")
+        return {
+            "did": did, "product_key": dev.product_key,
+            "datapoints": await state.client.datapoints(dev.product_key),
+            "state": await state.client.latest(did),
+        }
     except GizwitsError as e:
         raise _wrap(e)
 

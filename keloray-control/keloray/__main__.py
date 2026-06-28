@@ -87,6 +87,24 @@ async def cmd_state(args, cfg):
         print(json.dumps(await c.latest(args.did), indent=2))
 
 
+async def cmd_discover(args, cfg):
+    """Dump a device's datapoint schema + current values together.
+
+    This is what you run on a coral fixture (e.g. the AL100) to learn its real
+    channel datapoints, then copy them into the config `channels:` map."""
+    async with _client(cfg) as c:
+        dev = next((d for d in await c.bindings() if d.did == args.did), None)
+        if not dev:
+            raise SystemExit(f"device {args.did} not found in your bindings "
+                             "(run `python -m keloray devices`)")
+        print(f"# {dev.alias!r}  did={dev.did}  product_key={dev.product_key}  "
+              f"online={dev.is_online}")
+        print("\n## datapoint schema (the real channel names + ranges):")
+        print(json.dumps(await c.datapoints(dev.product_key), indent=2))
+        print("\n## current values:")
+        print(json.dumps(await c.latest(dev.did), indent=2))
+
+
 async def cmd_datapoints(args, cfg):
     async with _client(cfg) as c:
         print(json.dumps(await c.datapoints(args.product_key), indent=2))
@@ -99,7 +117,8 @@ async def cmd_set(args, cfg):
 
 async def cmd_scene(args, cfg):
     async with _client(cfg) as c:
-        runner = SceneRunner(c, min_interval=cfg.min_interval)
+        runner = SceneRunner(c, min_interval=cfg.min_interval,
+                             channel_map=cfg.channel_map())
         await runner.start(args.did, args.scene, **_kv(args.params))
         print(f"Running '{args.scene}' on {args.did}. Ctrl-C to stop.")
         try:
@@ -132,6 +151,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("scenes", help="list available scenes")
 
     sp = sub.add_parser("state", help="show a device's latest attrs"); sp.add_argument("did")
+    sp = sub.add_parser("discover", help="dump a device's datapoint schema + current values"); sp.add_argument("did")
     sp = sub.add_parser("datapoints", help="show product datapoint schema"); sp.add_argument("product_key")
     sp = sub.add_parser("set", help="write attrs: set <did> k=v ..."); sp.add_argument("did"); sp.add_argument("attrs", nargs="+")
     sp = sub.add_parser("scene", help="run a scene: scene <did> <name> k=v ...")
@@ -148,8 +168,8 @@ def main(argv=None):
         cfg.region = args.region
     handlers = {
         "probe": cmd_probe, "login": cmd_login, "devices": cmd_devices,
-        "state": cmd_state, "datapoints": cmd_datapoints, "set": cmd_set,
-        "scene": cmd_scene, "scenes": cmd_scenes,
+        "state": cmd_state, "discover": cmd_discover, "datapoints": cmd_datapoints,
+        "set": cmd_set, "scene": cmd_scene, "scenes": cmd_scenes,
     }
     if args.cmd == "serve":
         return cmd_serve(args, cfg)

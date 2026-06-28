@@ -83,9 +83,13 @@ python -m keloray scenes                          # list effects + their options
 | `candle` | warm flicker | `base, jitter` |
 | `thunderstorm` | dim blue overcast + random lightning flashes | `base_lum, flash_lum, min_gap, max_gap, double_flash_chance, seed` |
 | `tropics` | tracks real tropical daylight all day (see below) | `latitude, longitude, utc_offset, tick, wet_season, wet_months` |
+| `reef_day` | **coral fixtures:** tropical reef sun as a 7-channel spectral mix (see below) | `latitude, longitude, utc_offset, tick, wet_season, caps, moonlight` |
+| `reef_storm` | **coral fixtures:** dim blue/white overcast + lightning on the white channels | `base, flash, min_gap, max_gap, double_flash_chance, seed` |
 
-Effects are tiny async generators in `keloray/effects.py` — add your own with
-the `@scene(...)` decorator and it shows up everywhere (CLI, API, scheduler).
+`solid…tropics` drive RGB/white bulbs (`lum`/`hsv`/`temperature`); `reef_*`
+drive multi-channel spectral fixtures (`channels`). Effects are tiny async
+generators in `keloray/effects.py` — add your own with the `@scene(...)`
+decorator and it shows up everywhere (CLI, API, scheduler).
 
 ### Tropical sun tracker (`tropics`)
 
@@ -109,6 +113,45 @@ brightness ~40% and shift cooler in those months.
 > `thunderstorm` flashes and `tropics` are written through the cloud, which
 > rate-limits and adds latency — so lightning is approximate (no true
 > sub-100ms strobe). Crisp strobe needs the local/BLE path.
+
+## Coral / spectral fixtures (e.g. Keloray AL-series)
+
+The AL-series coral lights aren't RGB bulbs — they expose **seven independent
+LED channels** (cool white, royal blue, sky blue, UV1, UV2, deep red, green).
+This controller addresses them with stable *logical* names (`cw, rb, sb, uv1,
+uv2, dr, g`) and maps those to your fixture's real Gizwits datapoints.
+
+**Step 1 — learn your fixture's real channels:**
+
+```bash
+python -m keloray discover <did>     # dumps the datapoint schema + current values
+```
+
+**Step 2 — map them** in `config.yaml` under `channels:` (datapoint name + range
+per logical channel; see `config.example.yaml`). Until you do, the map is
+identity and the logical names are sent verbatim — which probably won't match,
+so this step is required for `reef_*` scenes to work on your light.
+
+**Step 3 — run a reef scene:**
+
+```bash
+python -m keloray scene <did> reef_day latitude=1.35 longitude=103.82 utc_offset=8
+python -m keloray scene <did> reef_day caps='{"uv1":60,"uv2":60}' moonlight=8
+python -m keloray scene <did> reef_storm
+```
+
+`reef_day` mirrors a tropical reef day across the spectrum (`keloray/reef.py`):
+**red-leaning dawn → blue/UV-dominant midday** (mimicking sunlight filtered
+through water, where red is absorbed and blue penetrates deepest) **→ warm dusk
+→ off** (or faint blue `moonlight`) at night, tracking the real clock and date
+so the mix also shifts across the year. `caps` lets you ceiling any channel for
+coral acclimation; `wet_season` dims for monsoon months. The REST API exposes
+the same via `GET /api/devices/{did}/discover` and the `reef_*` scenes.
+
+> Reality check: the exact datapoint names/ranges for the AL100 aren't in the
+> app (the product catalog is server-side), so the channel map **must** be
+> confirmed with `discover` against your account before `reef_*` will drive the
+> right LEDs.
 
 ### Robustness
 

@@ -23,6 +23,14 @@ class Config:
     creds_path: str = str(DEFAULT_CREDS)
     min_interval: float = 0.25
     rules: list[dict] = field(default_factory=list)
+    # Per-fixture spectral channel map (logical -> datapoint name/range). Fill
+    # this in from `python -m keloray discover <did>` for coral fixtures.
+    channels: dict = field(default_factory=dict)
+
+    def channel_map(self):
+        """Build a ChannelMap from the configured `channels` mapping."""
+        from .channels import ChannelMap
+        return ChannelMap(self.channels)
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> "Config":

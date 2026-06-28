@@ -22,6 +22,25 @@ creds_path: "~/.config/keloray/creds.json"
 # Minimum seconds between cloud writes (rate-limit guard for effects).
 min_interval: 0.25
 
+# Spectral channel map for multi-channel fixtures (e.g. Keloray AL coral
+# lights). Maps our logical channel names to your fixture's REAL Gizwits
+# datapoints. Find the real names + ranges with:
+#
+#     python -m keloray discover <did>
+#
+# Then fill these in. `name` is the datapoint key; logical 0..100 is scaled
+# onto lo..hi. Shorthand: set a channel to just the datapoint name string.
+# Leave this empty for plain RGB/white bulbs.
+channels:
+  # --- EXAMPLE for a 7-channel coral light (REPLACE names/ranges with yours) ---
+  # cw:  { name: "Cold_white",  lo: 0, hi: 100 }   # cool white
+  # rb:  { name: "Royal_blue",  lo: 0, hi: 100 }   # royal blue
+  # sb:  { name: "Sky_blue",    lo: 0, hi: 100 }   # sky blue
+  # uv1: { name: "UV1",         lo: 0, hi: 100 }
+  # uv2: { name: "UV2",         lo: 0, hi: 100 }
+  # dr:  { name: "Deep_red",    lo: 0, hi: 100 }   # deep red
+  # g:   { name: "Green",       lo: 0, hi: 100 }
+
 # Optional automations, evaluated on startup.
 rules:
   - name: "weekday wake-up"
@@ -35,3 +54,12 @@ rules:
     scene: "sunset"
     params: { seconds: 1800 }
     at: "22:00"
+
+  # Coral fixtures: track a tropical reef day across the spectral channels.
+  # Requires the `channels:` map above to be filled in for this device.
+  - name: "reef daylight"
+    did: "PUT_CORAL_DEVICE_ID_HERE"
+    scene: "reef_day"
+    params: { latitude: 1.35, longitude: 103.82, utc_offset: 8,
+              caps: { uv1: 60, uv2: 60 }, moonlight: 8 }
+    cron: { hour: 0, minute: 5 }   # (re)start the all-day tracker daily

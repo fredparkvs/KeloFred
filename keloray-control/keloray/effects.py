@@ -19,7 +19,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import AsyncIterator, Awaitable, Callable
 
-from . import solar
+from . import reef, solar
+from .channels import ChannelMap
 from .client import GizwitsClient, GizwitsError
 
 logger = logging.getLogger("keloray.effects")
@@ -258,6 +259,84 @@ async def tropics(*, latitude=solar.DEFAULT_LAT, longitude=solar.DEFAULT_LON,
         await asyncio.sleep(tick)
 
 
+# --- reef (spectral, multi-channel) scenes --------------------------------
+@scene("reef_day", "Tropical reef sun: spectral channel mix tracking the day.",
+       latitude=solar.DEFAULT_LAT, longitude=solar.DEFAULT_LON,
+       utc_offset=solar.DEFAULT_UTC, tick=60, wet_season=False, wet_months=None,
+       caps=None, moonlight=0.0)
+async def reef_day(*, latitude=solar.DEFAULT_LAT, longitude=solar.DEFAULT_LON,
+                   utc_offset=solar.DEFAULT_UTC, tick=60, wet_season=False,
+                   wet_months=None, caps=None, moonlight=0.0,
+                   **_) -> AsyncIterator[Frame]:
+    """Drive a coral fixture's spectral channels to mirror a tropical reef day.
+
+    Unlike ``tropics`` (which emits white-light lum/temperature for an RGB
+    bulb), this emits a per-channel mix (cool white / royal blue / sky blue /
+    UV1 / UV2 / deep red / green) via :mod:`keloray.reef`: a warm red-leaning
+    dawn, a blue/UV-dominant midday (mimicking light filtered through water),
+    and a warm dusk, then off (or faint blue ``moonlight``) at night. Tracks
+    the real clock and date, so the spectrum also varies across the year.
+
+    Params: ``latitude``/``longitude``/``utc_offset`` (default ~Singapore),
+    ``tick`` update seconds, ``wet_season``+``wet_months`` for monsoon dimming,
+    ``caps`` ({channel: 0..100} acclimation limits), ``moonlight`` (0..100
+    night blue level). Frames carry a ``channels`` dict mapped to your
+    fixture's real datapoints by the SceneRunner's ChannelMap.
+    """
+    if wet_months is None:
+        wet_months = [11, 12, 1]
+    while True:
+        now = datetime.now()
+        scale = 0.55 if (wet_season and now.month in wet_months) else 1.0
+        elev = reef.elevation_now(now, latitude, longitude, utc_offset)
+        yield reef.reef_channels(elev, caps=caps, intensity_scale=scale,
+                                 moonlight=moonlight)
+        await asyncio.sleep(tick)
+
+
+@scene("reef_storm", "Overcast reef storm with lightning on the white channels.",
+       base=15, flash=100, min_gap=2.0, max_gap=15.0,
+       double_flash_chance=0.4, tick=0.5, seed=None)
+async def reef_storm(*, base=15, flash=100, min_gap=2.0, max_gap=15.0,
+                     double_flash_chance=0.4, tick=0.5, seed=None,
+                     **_) -> AsyncIterator[Frame]:
+    """Storm over the reef: dim blue/white overcast + random lightning.
+
+    Spectral version of ``thunderstorm`` for coral fixtures — the base is a
+    dim blue-white overcast (no red/UV), and lightning spikes the white and
+    sky-blue channels. Same cloud-latency caveat: flashes are approximate, not
+    true sub-100ms strobe. Frames carry ``channels`` dicts.
+    """
+    rng = random.Random(seed)
+
+    def base_frame() -> Frame:
+        b = max(0, min(100, int(base)))
+        return {"onOff": 1, "channels": {
+            "cw": b, "rb": int(b * 1.4), "sb": b, "uv1": 0, "uv2": 0,
+            "dr": 0, "g": int(b * 0.4)}}
+
+    def flash_frame() -> Frame:
+        f = max(0, min(100, int(flash)))
+        return {"onOff": 1, "channels": {
+            "cw": f, "sb": int(f * 0.7), "rb": int(f * 0.5), "uv1": 0,
+            "uv2": 0, "dr": 0, "g": 0}}
+
+    yield base_frame()
+    while True:
+        gap = rng.uniform(min_gap, max_gap)
+        waited = 0.0
+        while waited < gap:
+            yield base_frame()
+            await asyncio.sleep(tick)
+            waited += tick
+        flickers = rng.choice((2, 3)) if rng.random() < double_flash_chance else 1
+        for _i in range(flickers):
+            yield flash_frame()
+            await asyncio.sleep(tick)
+            yield base_frame()
+            await asyncio.sleep(tick)
+
+
 # --- runner ---------------------------------------------------------------
 class SceneRunner:
     """Runs one effect against one device, writing frames with rate limiting.
@@ -266,10 +345,26 @@ class SceneRunner:
     previous. ``min_interval`` is the floor between cloud writes.
     """
 
-    def __init__(self, client: GizwitsClient, min_interval: float = 0.25):
+    def __init__(self, client: GizwitsClient, min_interval: float = 0.25,
+                 channel_map: ChannelMap | None = None):
         self.client = client
         self.min_interval = min_interval
+        # Expands spectral ``channels`` frames into device datapoints. Defaults
+        # to identity, so plain-attr scenes (lum/hsv/temperature) are untouched.
+        self.channel_map = channel_map or ChannelMap()
         self._tasks: dict[str, asyncio.Task] = {}
+
+    def _expand(self, frame: Frame) -> Frame:
+        """Translate a spectral ``channels`` frame into device attrs.
+
+        A frame may carry a ``channels`` dict of logical 0..100 levels; we map
+        those to the fixture's real datapoints and merge with any other keys
+        (e.g. onOff). Frames without ``channels`` pass through unchanged."""
+        if "channels" not in frame:
+            return frame
+        out = {k: v for k, v in frame.items() if k != "channels"}
+        out.update(self.channel_map.to_attrs(frame["channels"]))
+        return out
 
     def running(self, did: str) -> bool:
         t = self._tasks.get(did)
@@ -300,6 +395,7 @@ class SceneRunner:
         consecutive_failures = 0
         try:
             async for frame in spec.fn(**opts):
+                frame = self._expand(frame)
                 # enforce minimum spacing between cloud writes
                 now = asyncio.get_running_loop().time()
                 wait = self.min_interval - (now - last)
