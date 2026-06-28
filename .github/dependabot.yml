@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # Keep GitHub Actions versions current.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
+
+  # Uncomment the ecosystem matching your stack once code lands:
+  #
+  # - package-ecosystem: npm
+  #   directory: "/"
+  #   schedule:
+  #     interval: weekly
+  #
+  # - package-ecosystem: pip
+  #   directory: "/"
+  #   schedule:
+  #     interval: weekly
+  #
+  # - package-ecosystem: gomod
+  #   directory: "/"
+  #   schedule:
+  #     interval: weekly
+  #
+  # - package-ecosystem: cargo
+  #   directory: "/"
+  #   schedule:
+  #     interval: weekly

@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Build, lint & test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # --- Stack detection -------------------------------------------------
+      # Detect the project's stack from its manifest so this workflow keeps
+      # working as the repo grows, without needing edits up front.
+      - name: Detect stack
+        id: detect
+        run: |
+          if [ -f package.json ]; then
+            echo "stack=node" >> "$GITHUB_OUTPUT"
+          elif [ -f pyproject.toml ] || [ -f requirements.txt ]; then
+            echo "stack=python" >> "$GITHUB_OUTPUT"
+          elif [ -f go.mod ]; then
+            echo "stack=go" >> "$GITHUB_OUTPUT"
+          elif [ -f Cargo.toml ]; then
+            echo "stack=rust" >> "$GITHUB_OUTPUT"
+          else
+            echo "stack=none" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Detected stack: $(grep stack= "$GITHUB_OUTPUT" | tail -1)"
+
+      # --- Node / TypeScript ----------------------------------------------
+      - name: Set up Node
+        if: steps.detect.outputs.stack == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Node install / lint / test
+        if: steps.detect.outputs.stack == 'node'
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm run lint --if-present
+          npm run build --if-present
+          npm test --if-present
+
+      # --- Python ----------------------------------------------------------
+      - name: Set up Python
+        if: steps.detect.outputs.stack == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python install / lint / test
+        if: steps.detect.outputs.stack == 'python'
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f pyproject.toml ]; then pip install -e . || true; fi
+          pip install ruff pytest
+          ruff check . || true
+          pytest -q || [ $? -eq 5 ]  # exit 5 = no tests collected
+
+      # --- Go --------------------------------------------------------------
+      - name: Set up Go
+        if: steps.detect.outputs.stack == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Go build / vet / test
+        if: steps.detect.outputs.stack == 'go'
+        run: |
+          go mod download
+          go vet ./...
+          go build ./...
+          go test ./...
+
+      # --- Rust ------------------------------------------------------------
+      - name: Rust build / clippy / test
+        if: steps.detect.outputs.stack == 'rust'
+        run: |
+          rustup component add clippy
+          cargo clippy --all-targets || true
+          cargo build --verbose
+          cargo test --verbose
+
+      # --- No stack yet ----------------------------------------------------
+      - name: No stack detected
+        if: steps.detect.outputs.stack == 'none'
+        run: |
+          echo "No dependency manifest found yet — nothing to build."
+          echo "CI will auto-activate once you add package.json, pyproject.toml, go.mod, or Cargo.toml."
