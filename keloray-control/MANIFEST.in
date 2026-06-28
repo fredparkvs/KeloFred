@@ -1,0 +1,3 @@
+recursive-include keloray/web *.html
+include requirements.txt
+include config.example.yaml

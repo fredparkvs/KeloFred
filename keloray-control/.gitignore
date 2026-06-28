@@ -1,0 +1,13 @@
+# Local secrets / runtime — never commit
+config.yaml
+creds.json
+*.local.yaml
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+build/
+dist/
+*.egg-info/
+.venv/

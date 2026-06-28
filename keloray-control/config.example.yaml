@@ -1,0 +1,37 @@
+# Copy to config.yaml and point KELORAY_CONFIG at it, or use env vars instead.
+#
+#   export KELORAY_CONFIG=./config.yaml
+#
+# Secrets can also come from env (KELORAY_APP_ID / KELORAY_USERNAME /
+# KELORAY_PASSWORD) so you don't have to commit them.
+
+# The Gizwits Application-Id the app uses. Run `python -m keloray probe`
+# to discover which candidate is live for your region.
+app_id: "REPLACE_ME"
+
+# cn | us | eu  — pick the region your account/devices live in.
+region: "cn"
+
+# Your Keloray app login (the same username/password you use in the app).
+username: ""
+password: ""
+
+# Where the cached session token is stored.
+creds_path: "~/.config/keloray/creds.json"
+
+# Minimum seconds between cloud writes (rate-limit guard for effects).
+min_interval: 0.25
+
+# Optional automations, evaluated on startup.
+rules:
+  - name: "weekday wake-up"
+    did: "PUT_DEVICE_ID_HERE"
+    scene: "sunrise"
+    params: { seconds: 1200, cool: 100 }
+    cron: { hour: 6, minute: 30, day_of_week: "mon-fri" }
+
+  - name: "evening wind-down"
+    did: "PUT_DEVICE_ID_HERE"
+    scene: "sunset"
+    params: { seconds: 1800 }
+    at: "22:00"
