@@ -2,11 +2,19 @@
 
 > _Project description coming soon._
 
+## Projects
+
+- **[`keloray-control/`](./keloray-control/)** — a programmable controller for
+  Keloray / Gizwits smart lights (cloud API): custom scenes & effects
+  (including `thunderstorm` and a research-backed tropical-sun tracker),
+  schedules/automations, and a REST API + web dashboard. Research notes for the
+  sun tracker live in [`research/`](./research/).
+
 ## Status
 
-This repository is in its initial setup phase. DevOps scaffolding (CI, repo
-hygiene files, contribution templates, and a Claude Code SessionStart hook)
-is in place; application code will follow.
+This repository has its DevOps scaffolding (CI, repo hygiene files,
+contribution templates, and a Claude Code SessionStart hook) in place, plus the
+`keloray-control` application above.
 
 ## Getting started
 
